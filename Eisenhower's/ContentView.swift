@@ -46,6 +46,15 @@ struct ContentView: View {
                 .padding(.bottom, 12)
             }
 
+            // Dimming layer — dims the grid behind the expanded view,
+            // giving the modal a sense of depth without hiding context entirely.
+            if selectedQuadrant != nil {
+                Color.black.opacity(0.45)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .zIndex(9)
+            }
+
             if let quadrant = selectedQuadrant {
                 ExpandedQuadrantView(
                     quadrant:  quadrant,
@@ -56,6 +65,9 @@ struct ContentView: View {
                         }
                     }
                 )
+                // Explicit full-screen frame so matchedGeometryEffect always
+                // has the same destination size for all four cards.
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .zIndex(10)
             }
         }

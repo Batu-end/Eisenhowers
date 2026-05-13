@@ -10,6 +10,7 @@ struct ExpandedQuadrantView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var newTaskTitle = ""
+    @State private var dragOffset: CGFloat = 0
     @FocusState private var inputFocused: Bool
 
     init(quadrant: Quadrant, namespace: Namespace.ID, onClose: @escaping () -> Void) {
@@ -31,50 +32,85 @@ struct ExpandedQuadrantView: View {
             taskList
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        // System background for the content area — keeps it readable and native.
-        // The colored header band above provides continuity with the card animation.
         .background(Color(.systemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 22))
         .matchedGeometryEffect(id: quadrant.rawValue, in: namespace)
-        .ignoresSafeArea(edges: .bottom)
+        // All edges: gives matchedGeometryEffect a consistent full-screen
+        // destination frame regardless of which card (top or bottom) was tapped.
+        .ignoresSafeArea()
+        // Force dark appearance so system colors (label, separator, etc.)
+        // all resolve to their dark-mode variants without manual hex values.
+        .environment(\.colorScheme, .dark)
+        .offset(y: max(0, dragOffset))
+        .opacity(dragOffset > 0 ? max(0.7, 1 - dragOffset / 600) : 1)
     }
 
     // MARK: - Header
 
-    // Compact colored band — mirrors the card's color so the hero expansion
-    // feels continuous. Everything below this uses the system background.
+    // Gesture lives here only so it doesn't fight the list's scroll recogniser.
     private var headerBand: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(.white.opacity(0.25))
-                    .frame(width: 38, height: 38)
-                Image(systemName: quadrant.icon)
-                    .font(.footnote.bold())
-                    .foregroundStyle(.white)
-            }
+        VStack(spacing: 0) {
+            // Drag handle pill
+            RoundedRectangle(cornerRadius: 2.5)
+                .fill(Color(.tertiaryLabel))
+                .frame(width: 36, height: 5)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(quadrant.title)
-                    .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundStyle(.white)
-                Text(quadrant.subtitle.replacingOccurrences(of: "\n", with: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.78))
-            }
+            HStack(spacing: 14) {
+                // Solid color circle — only accent in the dark header
+                ZStack {
+                    Circle()
+                        .fill(quadrant.color)
+                        .frame(width: 38, height: 38)
+                    Image(systemName: quadrant.icon)
+                        .font(.footnote.bold())
+                        .foregroundStyle(.white)
+                }
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(quadrant.title)
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .foregroundStyle(.primary)
+                    Text(quadrant.subtitle.replacingOccurrences(of: "\n", with: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
 
-            Button(action: onClose) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.7))
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.tertiary)
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 56)
-        .padding(.bottom, 18)
-        .background(quadrant.color)
+        // Extra top padding absorbs the status bar area (ignoresSafeArea goes
+        // all-edges, so content starts behind the status bar without this).
+        .padding(.top, 58)
+        .background(Color(.secondarySystemBackground))
+        .gesture(
+            DragGesture(minimumDistance: 12)
+                .onChanged { value in
+                    // Resistance: feel slightly heavier than a free drag
+                    guard value.translation.height > 0 else { return }
+                    dragOffset = value.translation.height * 0.65
+                }
+                .onEnded { value in
+                    let fastFlick = value.predictedEndTranslation.height > 300
+                    let farEnough = value.translation.height > 110
+                    if fastFlick || farEnough {
+                        onClose()
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
     }
 
     // MARK: - Add task
@@ -91,7 +127,6 @@ struct ExpandedQuadrantView: View {
                 .submitLabel(.done)
                 .onSubmit { addTask() }
 
-            // Submit arrow appears only when there is text
             if !newTaskTitle.isEmpty {
                 Button(action: addTask) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -115,7 +150,6 @@ struct ExpandedQuadrantView: View {
                 TaskRowView(task: task, color: quadrant.color)
                     .listRowBackground(Color(.systemBackground))
                     .listRowSeparatorTint(Color(.separator).opacity(0.6))
-                    // Indent separator to align with the text, not the checkbox
                     .alignmentGuide(.listRowSeparatorLeading) { _ in 54 }
             }
             .onDelete { indexSet in
@@ -145,7 +179,6 @@ struct TaskRowView: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Reminders-style circle checkbox
             Button {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
                     task.isCompleted.toggle()
