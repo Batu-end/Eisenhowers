@@ -1,15 +1,11 @@
 import SwiftUI
 import SwiftData
 
-// Full-screen view for one quadrant.
-// Uses a custom @Query initialiser so the predicate can be built from the
-// quadrant value passed in at runtime.
 struct ExpandedQuadrantView: View {
     let quadrant: Quadrant
     var namespace: Namespace.ID
     let onClose: () -> Void
 
-    // Dynamic SwiftData query: filter by the quadrant's raw string value.
     @Query var tasks: [TodoItem]
     @Environment(\.modelContext) private var modelContext
 
@@ -20,9 +16,6 @@ struct ExpandedQuadrantView: View {
         self.quadrant  = quadrant
         self.namespace = namespace
         self.onClose   = onClose
-
-        // Build the predicate here so @Query can be initialised with a
-        // value known at init time rather than a generic "all tasks".
         let raw = quadrant.rawValue
         _tasks = Query(
             filter: #Predicate<TodoItem> { $0.quadrantRaw == raw },
@@ -32,79 +25,101 @@ struct ExpandedQuadrantView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            headerBar
-            addTaskBar
+            headerBand
+            addTaskRow
+            Divider()
             taskList
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(quadrant.color)
-        // matchedGeometryEffect with the same id as the corresponding
-        // QuadrantCardView causes SwiftUI to animate the frame from the
-        // card's position/size to this full-screen position/size (and back).
-        .matchedGeometryEffect(id: quadrant.rawValue, in: namespace)
+        // System background for the content area — keeps it readable and native.
+        // The colored header band above provides continuity with the card animation.
+        .background(Color(.systemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 22))
+        .matchedGeometryEffect(id: quadrant.rawValue, in: namespace)
         .ignoresSafeArea(edges: .bottom)
     }
 
-    // MARK: - Sub-views
+    // MARK: - Header
 
-    private var headerBar: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label(quadrant.title, systemImage: quadrant.icon)
-                    .font(.largeTitle.bold())
+    // Compact colored band — mirrors the card's color so the hero expansion
+    // feels continuous. Everything below this uses the system background.
+    private var headerBand: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.25))
+                    .frame(width: 38, height: 38)
+                Image(systemName: quadrant.icon)
+                    .font(.footnote.bold())
                     .foregroundStyle(.white)
-                Text(quadrant.subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.75))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(quadrant.title)
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(quadrant.subtitle.replacingOccurrences(of: "\n", with: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.78))
             }
 
             Spacer()
 
             Button(action: onClose) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.title)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.7))
             }
         }
-        .padding(.horizontal)
-        .padding(.top, 56)   // clears the status bar
-        .padding(.bottom, 16)
+        .padding(.horizontal, 20)
+        .padding(.top, 56)
+        .padding(.bottom, 18)
+        .background(quadrant.color)
     }
 
-    private var addTaskBar: some View {
-        HStack(spacing: 10) {
-            TextField("New task…", text: $newTaskTitle)
-                .padding(12)
-                .background(.white.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
-                .foregroundStyle(.white)
-                .tint(.white)
+    // MARK: - Add task
+
+    private var addTaskRow: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "plus.circle.fill")
+                .font(.title3)
+                .foregroundStyle(quadrant.color)
+
+            TextField("New task", text: $newTaskTitle)
+                .font(.body)
                 .focused($inputFocused)
                 .submitLabel(.done)
                 .onSubmit { addTask() }
 
-            Button(action: addTask) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.white)
+            // Submit arrow appears only when there is text
+            if !newTaskTitle.isEmpty {
+                Button(action: addTask) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(quadrant.color)
+                }
+                .transition(.scale.combined(with: .opacity))
             }
-            .disabled(newTaskTitle.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(.systemBackground))
+        .animation(.spring(response: 0.25), value: newTaskTitle.isEmpty)
     }
+
+    // MARK: - Task list
 
     private var taskList: some View {
         List {
             ForEach(tasks) { task in
-                TaskRowView(task: task)
-                    .listRowBackground(Color.white.opacity(0.12))
-                    .listRowSeparatorTint(.white.opacity(0.2))
+                TaskRowView(task: task, color: quadrant.color)
+                    .listRowBackground(Color(.systemBackground))
+                    .listRowSeparatorTint(Color(.separator).opacity(0.6))
+                    // Indent separator to align with the text, not the checkbox
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 54 }
             }
             .onDelete { indexSet in
-                for index in indexSet {
-                    modelContext.delete(tasks[index])
-                }
+                for i in indexSet { modelContext.delete(tasks[i]) }
             }
         }
         .listStyle(.plain)
@@ -126,26 +141,43 @@ struct ExpandedQuadrantView: View {
 
 struct TaskRowView: View {
     @Bindable var task: TodoItem
+    let color: Color
 
     var body: some View {
         HStack(spacing: 14) {
-            // Completion toggle
+            // Reminders-style circle checkbox
             Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
                     task.isCompleted.toggle()
                 }
             } label: {
-                Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(.white.opacity(task.isCompleted ? 0.6 : 0.9))
+                ZStack {
+                    Circle()
+                        .strokeBorder(
+                            task.isCompleted ? color : color.opacity(0.45),
+                            lineWidth: 2
+                        )
+                        .frame(width: 26, height: 26)
+
+                    if task.isCompleted {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 26, height: 26)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .animation(.spring(response: 0.25), value: task.isCompleted)
             }
             .buttonStyle(.plain)
 
             Text(task.title)
-                .foregroundStyle(.white.opacity(task.isCompleted ? 0.45 : 1.0))
-                .strikethrough(task.isCompleted, color: .white.opacity(0.45))
-                .animation(.easeInOut(duration: 0.2), value: task.isCompleted)
+                .font(.body)
+                .foregroundStyle(task.isCompleted ? Color(.tertiaryLabel) : Color(.label))
+                .strikethrough(task.isCompleted, color: Color(.tertiaryLabel))
+                .animation(.easeOut(duration: 0.15), value: task.isCompleted)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 5)
     }
 }
