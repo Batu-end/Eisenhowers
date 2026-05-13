@@ -2,59 +2,50 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    // The Namespace ties together the card and its expanded counterpart.
-    // SwiftUI uses it to animate geometry between the two views.
     @Namespace private var heroAnimation
-
-    // Tracks which quadrant (if any) is currently expanded.
     @State private var selectedQuadrant: Quadrant? = nil
-
-    // We query all tasks here only to compute the per-quadrant counts.
     @Query private var allTasks: [TodoItem]
+
+    // Single pass: compute both counts at once instead of iterating twice.
+    private var counts: [String: (remaining: Int, total: Int)] {
+        var incomplete: [String: Int] = [:]
+        var total:      [String: Int] = [:]
+        for task in allTasks {
+            total[task.quadrantRaw, default: 0] += 1
+            if !task.isCompleted { incomplete[task.quadrantRaw, default: 0] += 1 }
+        }
+        return Dictionary(uniqueKeysWithValues: Quadrant.allCases.map {
+            ($0.rawValue, (incomplete[$0.rawValue, default: 0], total[$0.rawValue, default: 0]))
+        })
+    }
 
     var body: some View {
         ZStack {
-            // ── Background ────────────────────────────────────────────────
-            Color(.systemGroupedBackground)
-                .ignoresSafeArea()
+            Color(.systemGroupedBackground).ignoresSafeArea()
 
-            // ── Matrix grid ───────────────────────────────────────────────
             VStack(spacing: 0) {
-                matrixHeader
+                header
                     .padding(.horizontal)
                     .padding(.top)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 10)
 
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 16
-                ) {
-                    ForEach(Quadrant.allCases) { quadrant in
-                        QuadrantCardView(
-                            quadrant:  quadrant,
-                            taskCount: incompleteCount(for: quadrant),
-                            namespace: heroAnimation
-                        )
-                        // Hide the card while its expanded counterpart is
-                        // visible so we don't see a ghost underneath.
-                        .opacity(selectedQuadrant == quadrant ? 0 : 1)
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) {
-                                selectedQuadrant = quadrant
-                            }
-                        }
-                    }
+                // Axis column labels
+                HStack(spacing: 16) {
+                    axisLabel("URGENT")
+                    axisLabel("NOT URGENT")
                 }
                 .padding(.horizontal)
+                .padding(.bottom, 6)
 
-                Spacer()
+                // 2 × 2 grid — rows expand to fill remaining height
+                VStack(spacing: 12) {
+                    row(.doNow,    .schedule)
+                    row(.delegate, .eliminate)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 12)
             }
 
-            // ── Expanded overlay ──────────────────────────────────────────
-            // When a quadrant is selected the ExpandedQuadrantView covers
-            // the whole screen.  Because it shares the same matchedGeometry
-            // id as the tapped card, SwiftUI interpolates the frame from
-            // the card's position/size → full screen (and back on close).
             if let quadrant = selectedQuadrant {
                 ExpandedQuadrantView(
                     quadrant:  quadrant,
@@ -70,14 +61,46 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Grid helpers
 
-    private var matrixHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 3) {
+    @ViewBuilder
+    private func row(_ left: Quadrant, _ right: Quadrant) -> some View {
+        HStack(spacing: 12) {
+            card(left)
+            card(right)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func card(_ quadrant: Quadrant) -> some View {
+        let c = counts[quadrant.rawValue] ?? (0, 0)
+        QuadrantCardView(
+            quadrant:  quadrant,
+            remaining: c.remaining,
+            total:     c.total,
+            namespace: heroAnimation
+        )
+        .opacity(selectedQuadrant == quadrant ? 0 : 1)
+        .onTapGesture {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.78)) {
+                selectedQuadrant = quadrant
+            }
+        }
+    }
+
+    // MARK: - Sub-views
+
+    private var totalRemaining: Int {
+        counts.values.reduce(0) { $0 + $1.remaining }
+    }
+
+    private var header: some View {
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("Eisenhower Matrix")
-                    .font(.title.bold())
-                Text("Focus on what matters most")
+                    .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                Text(headerSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -85,9 +108,19 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Helpers
+    private var headerSubtitle: String {
+        let date = Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        if totalRemaining == 0 {
+            return "\(date) · All clear"
+        }
+        return "\(date) · \(totalRemaining) task\(totalRemaining == 1 ? "" : "s") remaining"
+    }
 
-    private func incompleteCount(for quadrant: Quadrant) -> Int {
-        allTasks.filter { $0.quadrantRaw == quadrant.rawValue && !$0.isCompleted }.count
+    private func axisLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .tracking(1.2)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
     }
 }

@@ -21,10 +21,10 @@ enum Quadrant: String, CaseIterable, Identifiable, Codable {
 
     var subtitle: String {
         switch self {
-        case .doNow:     return "Urgent & Important"
-        case .schedule:  return "Not Urgent · Important"
-        case .delegate:  return "Urgent · Not Important"
-        case .eliminate: return "Not Urgent · Not Important"
+        case .doNow:     return "Urgent\n& Important"
+        case .schedule:  return "Not Urgent\n& Important"
+        case .delegate:  return "Urgent\n& Not Important"
+        case .eliminate: return "Not Urgent\n& Not Important"
         }
     }
 

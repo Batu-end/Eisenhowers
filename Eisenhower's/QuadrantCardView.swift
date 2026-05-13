@@ -1,52 +1,91 @@
 import SwiftUI
 
-// A single card in the 2x2 grid.
-// The outer VStack receives the matchedGeometryEffect so the entire card
-// (background + text) participates in the hero animation.
 struct QuadrantCardView: View {
     let quadrant: Quadrant
-    let taskCount: Int
+    let remaining: Int
+    let total: Int
     var namespace: Namespace.ID
 
+    private var completed: Int { total - remaining }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Top row: icon + optional badge
-            HStack(alignment: .top) {
-                Image(systemName: quadrant.icon)
-                    .font(.title2)
-                    .foregroundStyle(.white.opacity(0.9))
+        ZStack(alignment: .bottomLeading) {
+            // Gradient background
+            LinearGradient(
+                colors: [quadrant.color, quadrant.color.opacity(0.72)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Watermark icon — vertically centered in the card
+            Image(systemName: quadrant.icon)
+                .font(.system(size: 96, weight: .heavy))
+                .foregroundStyle(.white.opacity(0.1))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+            // Foreground content
+            VStack(alignment: .leading, spacing: 0) {
+
+                // ── Top: title + badge ────────────────────────────────
+                HStack(alignment: .firstTextBaseline) {
+                    Text(quadrant.title)
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Spacer()
+
+                    if remaining > 0 {
+                        Text("\(remaining) left")
+                            .font(.caption.bold())
+                            .foregroundStyle(quadrant.color)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.white, in: Capsule())
+                    } else if total > 0 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                }
 
                 Spacer()
 
-                if taskCount > 0 {
-                    Text("\(taskCount)")
-                        .font(.caption.bold())
-                        .foregroundStyle(quadrant.color)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.92), in: Capsule())
+                // ── Bottom: 2-line subtitle + optional progress bar ───
+                Text(quadrant.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if total > 0 {
+                    progressBar
+                        .padding(.top, 10)
                 }
             }
-
-            Spacer()
-
-            // Bottom: title + subtitle
-            Text(quadrant.title)
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-
-            Text(quadrant.subtitle)
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.75))
-                .lineLimit(2)
-                .padding(.top, 2)
+            .padding(18)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .frame(height: 160)
-        .background(quadrant.color, in: RoundedRectangle(cornerRadius: 22))
-        // matchedGeometryEffect links this card to the ExpandedQuadrantView
-        // that shares the same id and namespace.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
         .matchedGeometryEffect(id: quadrant.rawValue, in: namespace)
+    }
+
+    private var progressBar: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.22))
+                    Capsule()
+                        .fill(.white.opacity(0.85))
+                        .frame(width: geo.size.width * CGFloat(completed) / CGFloat(total))
+                        .animation(.spring(response: 0.4), value: completed)
+                }
+            }
+            .frame(height: 4)
+
+            Text("\(completed) of \(total) done")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.60))
+                .monospacedDigit()
+        }
     }
 }
